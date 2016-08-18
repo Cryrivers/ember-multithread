@@ -1,4 +1,5 @@
 # ember-multithread
+
 Dead-simple multi-threading support for Ember.js applications.
 
 ## Installation
@@ -9,6 +10,7 @@ ember install ember-multithread
 ```
 
 ## Usage
+### Basic usage of `WorkerProperty`
 You can create `WorkerProperty` in your controllers, routes or components.
 
 ```js
@@ -31,6 +33,12 @@ export default Ember.Controller.extend({
   }
 });
 ```
+
+### Synergy with `ember-concurrency`
+TODO
+
+### Multi-threaded `map()` and `reduce()`
+TODO
 
 ## Restriction
 TODO
