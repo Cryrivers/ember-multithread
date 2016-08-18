@@ -33,6 +33,9 @@ export default Ember.Controller.extend({
   }
 });
 ```
+### `set` or `get` properties in your Ember app
+** This may cause race conditions if there are multiple works running simultaneously in one controller. **
+TODO
 
 ### Synergy with `ember-concurrency`
 TODO
