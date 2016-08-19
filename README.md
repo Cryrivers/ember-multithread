@@ -1,5 +1,7 @@
 # ember-multithread (Still WIP)
 
+[![Build Status][build-status-img]][build-status-link]
+
 Dead-simple multi-threading support for Ember.js applications.
 
 ## Installation
@@ -52,3 +54,6 @@ TODO
 
 ## Special Thanks
 Thanks ember-concurrency and parallel.js for the inspiration.
+
+[build-status-img]: https://travis-ci.org/Cryrivers/ember-multithread.svg?branch=master
+[build-status-link]: https://travis-ci.org/Cryrivers/ember-multithread
