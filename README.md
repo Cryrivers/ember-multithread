@@ -1,4 +1,4 @@
-# ember-multithread
+# ember-multithread (Still WIP)
 
 Dead-simple multi-threading support for Ember.js applications.
 
