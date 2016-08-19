@@ -1,5 +1,5 @@
 import Ember from 'ember';
-import worker from 'ember-multithread/-worker-property';
+import {worker} from 'ember-multithread';
 
 export default Ember.Controller.extend({
   pi: 0,
@@ -9,13 +9,15 @@ export default Ember.Controller.extend({
     for (let i = 0; i <= iteration; i++) {
       pi = pi + (4 / n) - (4 / (n + 2));
       n = n + 4;
+      if (i % 100000 === 0) {
+        this.set('pi', pi);
+      }
     }
     return pi;
   }),
   actions: {
     calculate() {
-      debugger;
-      this.get('calculatePi').perform(1000000000).then(result=> {
+      this.get('calculatePi').perform(500000000).then(result=> {
         console.log(result);
       });
     }

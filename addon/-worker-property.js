@@ -1,6 +1,9 @@
 import Ember from 'ember';
-
-const _ComputedProperty = Ember.__loader.require("ember-metal/computed").ComputedProperty;
+import {
+  _ComputedProperty,
+  INVOKE,
+  _cleanupOnDestroy
+} from './utils';
 
 const _Worker = Ember.Object.extend({
   _fn: null,
@@ -9,17 +12,6 @@ const _Worker = Ember.Object.extend({
     const contextProxy = `function ContextProxy() {
         this.contextDict = {};
       }
-      ContextProxy.prototype.get = function(key) {
-        this.contextDict[key] = {
-          resolved: false
-        }
-        self.postMessage({
-          command: 'GET',
-          params: [key]
-        });
-        while(!this.contextDict[key].resolved) {}
-        return this.contextDict[key].value;
-      };
       ContextProxy.prototype.set = function(key, value) {
         self.postMessage({
           command: 'SET',
@@ -28,7 +20,9 @@ const _Worker = Ember.Object.extend({
         return value;
       };
     `;
-    return `${contextProxy}
+    return `
+      'use strict';
+      ${contextProxy}
       self._emberContext = new ContextProxy();
       self.onmessage = function(e) {
         switch (e.data.command) {
@@ -42,28 +36,45 @@ const _Worker = Ember.Object.extend({
       };
     `;
   },
+  init() {
+    this._super(...arguments);
+    _cleanupOnDestroy(this.get('_context'), this, '_cleanupWorker');
+  },
+  _cleanupWorker() {
+    const worker = this.get('_worker');
+    if (worker) {
+      worker.terminate();
+      this.set('_worker', null);
+    }
+  },
+  cancel() {
+    this._cleanupWorker();
+  },
   perform(...args) {
     return new Ember.RSVP.Promise((resolve, reject)=> {
       if (URL && Blob && Worker) {
         const blob = new Blob([this._getWorkerScript()], {type: 'text/javascript'});
         const url = URL.createObjectURL(blob);
         const worker = new Worker(url);
-
-        worker.onmessage = function(e) {
+        const context = this.get('_context');
+        this.set('_worker', worker);
+        worker.onmessage = (e)=> {
           switch (e.data.command) {
             case 'INVOKE':
               resolve(e.data.returns);
-              worker.terminate();
+              this._cleanupWorker();
               break;
             case 'GET':
               break;
             case 'SET':
+              const [setKey, value] = e.data.params;
+              context.set(setKey, value);
               break;
           }
         };
-        worker.onerror = function(e) {
+        worker.onerror = (e)=> {
           reject(e);
-          worker.terminate();
+          this._cleanupWorker();
         };
         worker.postMessage({
           command: 'INVOKE',
@@ -73,10 +84,13 @@ const _Worker = Ember.Object.extend({
         resolve(this._fn(...args));
       }
     });
+  },
+  [INVOKE](...args) {
+    return this.perform(...args);
   }
 });
 
-function WorkerProperty(...decorators) {
+export default function WorkerProperty(...decorators) {
   const workerFn = decorators.pop();
   _ComputedProperty.call(this, function() {
     return _Worker.create({
@@ -87,7 +101,3 @@ function WorkerProperty(...decorators) {
 }
 
 WorkerProperty.prototype = Object.create(_ComputedProperty.prototype);
-
-export default function(...args) {
-  return new WorkerProperty(...args);
-}
