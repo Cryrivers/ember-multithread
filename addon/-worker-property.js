@@ -8,11 +8,67 @@ import {
 const _Worker = Ember.Object.extend({
   _fn: null,
   _context: null,
+  // throttle rate 16.6667ms => 60 FPS
+  _throttle: 16.66666,
   _getWorkerScript() {
-    const contextProxy = `function ContextProxy() {
-        this.contextDict = {};
+    const throttle = `
+      function throttle(func, wait, options) {
+        var context, args, result;
+        var timeout = null;
+        var previous = 0;
+        if (!options) {
+          options = {};
+        }
+        var later = function() {
+          previous = options.leading === false ? 0 : Date.now();
+          timeout = null;
+          result = func.apply(context, args);
+          if (!timeout) {
+            context = args = null;
+          }
+        };
+        return function() {
+          var now = Date.now();
+          if (!previous && options.leading === false) {
+            previous = now;
+          }
+          var remaining = wait - (now - previous);
+          context = this;
+          args = arguments;
+          if (remaining <= 0 || remaining > wait) {
+            if (timeout) {
+              clearTimeout(timeout);
+              timeout = null;
+            }
+            previous = now;
+            result = func.apply(context, args);
+            if (!timeout) {
+              context = args = null;
+            }
+          } else if (!timeout && options.trailing !== false) {
+            timeout = setTimeout(later, remaining);
+          }
+          return result;
+        };
       }
-      ContextProxy.prototype.set = function(key, value) {
+    `;
+    const contextProxy = `function ContextProxy() {
+        this.get = this.getProperties = this.getEach = this.getWithDefault = this.incrementProperty = this.decrementProperty = function () {
+          self.postMessage({
+            command: 'ABORT_GET'
+          });
+        };
+        this.set = throttle(this._set, 16.666);
+        this.setProperties = throttle(this._setProperties, 16.666);
+      }
+      ContextProxy.prototype._setProperties = function(key, value) {
+        self.postMessage({
+          command: 'SETPROPS',
+          params: [key, value]
+        });
+        return value;
+      }
+      ContextProxy.prototype._set = function(key, value) {
         self.postMessage({
           command: 'SET',
           params: [key, value]
@@ -22,16 +78,16 @@ const _Worker = Ember.Object.extend({
     `;
     return `
       'use strict';
+      ${throttle}
       ${contextProxy}
-      self._emberContext = new ContextProxy();
+      self.EmberContext = new ContextProxy();
       self.onmessage = function(e) {
         switch (e.data.command) {
           case 'INVOKE':
             self.postMessage({
               command: 'INVOKE',
-              returns: (${ this._fn.toString() }).apply(self._emberContext, e.data.params)
+              returns: (${ this._fn.toString() }).apply(self.EmberContext, e.data.params)
             });
-          break;
         } 
       };
     `;
@@ -64,11 +120,16 @@ const _Worker = Ember.Object.extend({
               resolve(e.data.returns);
               this._cleanupWorker();
               break;
-            case 'GET':
+            case 'ABORT_GET':
+              Ember.assert('You cannot use `get`, `getProperties`, `getWithDefault`, `getEach`, `incrementProperty` or `decrementProperty` in ember-multithread workers', false);
               break;
             case 'SET':
-              const [setKey, value] = e.data.params;
-              context.set(setKey, value);
+              const [setKey, setValue] = e.data.params;
+              context.set(setKey, setValue);
+              break;
+            case 'SETPROPS':
+              const [setPropsKey, setPropsValue] = e.data.params;
+              context.setProperties(setPropsKey, setPropsValue);
               break;
           }
         };

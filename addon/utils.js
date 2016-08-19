@@ -7,7 +7,7 @@ export function _cleanupOnDestroy(owner, object, cleanupMethodName) {
     let disposers = [];
 
     owner.willDestroy = function() {
-      for (let i = 0, l = disposers.length; i < l; i ++) {
+      for (let i = 0, l = disposers.length; i < l; i++) {
         disposers[i]();
       }
       oldWillDestroy.apply(owner, arguments);

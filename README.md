@@ -14,8 +14,10 @@ ember install ember-multithread
 You can create `WorkerProperty` in your controllers, routes or components.
 
 ```js
+import Ember from 'ember';
+import {worker} from 'ember-multithread';
+
 export default Ember.Controller.extend({
-  pi: 0,
   calculatePi: worker(function(iteration) {
     let pi = 0;
     let n = 1;
@@ -27,14 +29,14 @@ export default Ember.Controller.extend({
   }),
   actions: {
     calculate() {
-      this.get('calculatePi').perform(1000000000).then(result=> {
+      this.get('calculatePi').perform(500000000).then(result=> {
         console.log(result);
       });
     }
   }
 });
 ```
-### `set` or `get` properties in your Ember app
+### Set properties in your Ember app
 **This may cause race conditions if there are multiple works running simultaneously in one controller.**
 
 TODO
@@ -47,3 +49,6 @@ TODO
 
 ## Restriction
 TODO
+
+## Special Thanks
+Thanks ember-concurrency and parallel.js for the inspiration.
