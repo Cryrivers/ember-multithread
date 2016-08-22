@@ -84,10 +84,20 @@ const _Worker = Ember.Object.extend({
       self.onmessage = function(e) {
         switch (e.data.command) {
           case 'INVOKE':
-            self.postMessage({
-              command: 'INVOKE',
-              returns: (${ this._fn.toString() }).apply(self.EmberContext, e.data.params)
-            });
+            var workerResult = (${ this._fn.toString() }).apply(self.EmberContext, e.data.params);
+            if (typeof workerResult.then === 'function') {
+              workerResult.then(function(asyncResult) {
+                self.postMessage({
+                  command: 'INVOKE',
+                  returns: asyncResult
+                });
+              });
+            } else {
+              self.postMessage({
+                command: 'INVOKE',
+                returns: workerResult
+              });
+            }
         } 
       };
     `;
@@ -106,6 +116,11 @@ const _Worker = Ember.Object.extend({
   cancel() {
     this._cleanupWorker();
   },
+  /**
+   * Spawn one singleton worker
+   * @param args
+   * @returns {Ember.RSVP.Promise}
+   */
   perform(...args) {
     return new Ember.RSVP.Promise((resolve, reject)=> {
       if (URL && Blob && Worker) {
@@ -145,6 +160,20 @@ const _Worker = Ember.Object.extend({
         resolve(this._fn(...args));
       }
     });
+  },
+  /**
+   *
+   * @param array
+   */
+  map(array) {
+    Ember.assert('You must provide an array to `map` function.', Ember.isArray(array));
+  },
+  /**
+   *
+   * @param array
+   */
+  reduce(array) {
+    Ember.assert('You must provide an array to `map` function.', Ember.isArray(array));
   },
   [INVOKE](...args) {
     return this.perform(...args);
