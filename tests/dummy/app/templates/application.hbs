@@ -1,4 +1,6 @@
-{{pi}}
+<h1>WebWorker Demo</h1>
+{{progress}}%
 <hr>
-<button {{action 'calculate'}}>Test</button>
+<button {{action 'calculate'}} disabled={{calculatePiWorker.isRunning}}>Calculate Pi Multi-threaded</button>
+<button {{action 'calculateSingleThreaded'}}>Calculate Pi Single-threaded</button>
 <button>Dummy Button</button>

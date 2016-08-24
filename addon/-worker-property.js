@@ -112,7 +112,10 @@ const _Worker = Ember.Object.extend({
       worker.terminate();
       this.set('_worker', null);
     }
+    this.set('isRunning', false);
   },
+  // Public Properties
+  isRunning: false,
   cancel() {
     this._cleanupWorker();
   },
@@ -123,6 +126,7 @@ const _Worker = Ember.Object.extend({
    */
   perform(...args) {
     return new Ember.RSVP.Promise((resolve, reject)=> {
+      this.set('isRunning', true);
       if (URL && Blob && Worker) {
         const blob = new Blob([this._getWorkerScript()], {type: 'text/javascript'});
         const url = URL.createObjectURL(blob);
@@ -158,6 +162,7 @@ const _Worker = Ember.Object.extend({
         });
       } else {
         resolve(this._fn(...args));
+        this._cleanupWorker();
       }
     });
   },
