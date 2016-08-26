@@ -1,5 +1,12 @@
 <h1>WebWorker Demo</h1>
 {{progress}}%
+{{#if pi}}
+  Calculating: {{pi}}
+{{/if}}
+<br>
+{{#if finalPi}}
+  Final result is {{finalPi}} !
+{{/if}}
 <hr>
 <button {{action 'calculate'}} disabled={{calculatePiWorker.isRunning}}>Calculate Pi Multi-threaded</button>
 <button {{action 'calculateSingleThreaded'}}>Calculate Pi Single-threaded</button>
