@@ -5,12 +5,44 @@ import {
   _cleanupOnDestroy
 } from './utils';
 
-const _Worker = Ember.Object.extend({
+const SUPPORT_WEBWORKER = !!(URL && Blob && Worker);
+const DEFAULT_CONCURRENCY = navigator.hardwareConcurrency || 4;
+
+function _balancedChunkify(array, numberOfSubarray) {
+
+  if (numberOfSubarray < 2) {
+    return [array];
+  }
+
+  const len = array.length;
+  const out = [];
+  let i = 0;
+  let size;
+
+  if (len % numberOfSubarray === 0) {
+    size = Math.floor(len / numberOfSubarray);
+    while (i < len) {
+      out.push(array.slice(i, i += size));
+    }
+  } else {
+    while (i < len) {
+      size = Math.ceil((len - i) / numberOfSubarray--);
+      out.push(array.slice(i, i += size));
+    }
+  }
+
+  return out;
+}
+
+const _SingleWorker = Ember.Object.extend({
   _fn: null,
   _context: null,
-  // throttle rate 16.6667ms => 60 FPS
-  _throttle: 16.66666,
+  _worker: null,
+  _throttle: 16.6666,
+  // Public Properties
+  isRunning: false,
   _getWorkerScript() {
+    const _throttleValue = this.get('_throttle');
     const throttle = `
       function throttle(func, wait, options) {
         var context, args, result;
@@ -58,8 +90,8 @@ const _Worker = Ember.Object.extend({
             command: 'ABORT_GET'
           });
         };
-        this.set = throttle(this._set, 16.666);
-        this.setProperties = throttle(this._setProperties, 16.666);
+        this.set = throttle(this._set, ${_throttleValue});
+        this.setProperties = throttle(this._setProperties, ${_throttleValue});
       }
       ContextProxy.prototype._setProperties = function(key, value) {
         self.postMessage({
@@ -102,10 +134,6 @@ const _Worker = Ember.Object.extend({
       };
     `;
   },
-  init() {
-    this._super(...arguments);
-    _cleanupOnDestroy(this.get('_context'), this, '_cleanupWorker');
-  },
   _cleanupWorker() {
     const worker = this.get('_worker');
     if (worker) {
@@ -114,26 +142,16 @@ const _Worker = Ember.Object.extend({
     }
     this.set('isRunning', false);
   },
-  // Public Properties
-  isRunning: false,
-  cancel() {
-    this._cleanupWorker();
-  },
-  /**
-   * Spawn one singleton worker
-   * @param args
-   * @returns {Ember.RSVP.Promise}
-   */
-  perform(...args) {
-    return new Ember.RSVP.Promise((resolve, reject)=> {
+  run(...args) {
+    return new Ember.RSVP.Promise((resolve, reject) => {
       this.set('isRunning', true);
-      if (URL && Blob && Worker) {
+      if (SUPPORT_WEBWORKER) {
         const blob = new Blob([this._getWorkerScript()], {type: 'text/javascript'});
         const url = URL.createObjectURL(blob);
         const worker = new Worker(url);
         const context = this.get('_context');
         this.set('_worker', worker);
-        worker.onmessage = (e)=> {
+        worker.onmessage = (e) => {
           switch (e.data.command) {
             case 'INVOKE':
               resolve(e.data.returns);
@@ -152,7 +170,7 @@ const _Worker = Ember.Object.extend({
               break;
           }
         };
-        worker.onerror = (e)=> {
+        worker.onerror = (e) => {
           reject(e);
           this._cleanupWorker();
         };
@@ -166,6 +184,34 @@ const _Worker = Ember.Object.extend({
       }
     });
   },
+  cancel() {
+    this._cleanupWorker();
+  }
+});
+
+const _WorkerProperty = Ember.Object.extend({
+  _fn: null,
+  _context: null,
+  init() {
+    this._super(...arguments);
+    _cleanupOnDestroy(this.get('_context'), this, '_cleanupWorker');
+  },
+  cancel() {
+    this._cleanupWorker();
+  },
+  _cleanupWorker() {
+    // Cancel
+  },
+  /**
+   * Spawn one singleton worker
+   * @param args
+   * @returns {Ember.RSVP.Promise}
+   */
+  perform(...args) {
+    const _fn = this.get('_fn');
+    const _context = this.get('_context');
+    return _SingleWorker.create({ _fn, _context }).run(...args);
+  },
   /**
    *
    * @param array
@@ -178,7 +224,7 @@ const _Worker = Ember.Object.extend({
    * @param array
    */
   reduce(array) {
-    Ember.assert('You must provide an array to `map` function.', Ember.isArray(array));
+    Ember.assert('You must provide an array to `reduce` function.', Ember.isArray(array));
   },
   [INVOKE](...args) {
     return this.perform(...args);
@@ -188,7 +234,7 @@ const _Worker = Ember.Object.extend({
 export default function WorkerProperty(...decorators) {
   const workerFn = decorators.pop();
   _ComputedProperty.call(this, function() {
-    return _Worker.create({
+    return _WorkerProperty.create({
       _fn: workerFn,
       _context: this
     });
