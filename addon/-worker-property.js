@@ -132,19 +132,13 @@ const _SingleWorker = Ember.Object.extend({
             }
             break;
           case 'MAP':
-            var array = e.data.params[0];
-            var mapResult = array.map(${ this._fn.toString() });
-            self.postMessage({
-                command: 'MAP',
-                returns: mapResult
-            });
-            break;
           case 'REDUCE':
+          case 'FILTER':
             var array = e.data.params[0];
-            var reduceResult = array.reduce(${ this._fn.toString() });
+            var arrayFuncResult = array[e.data.command.toLowerCase()](${ this._fn.toString() });
             self.postMessage({
-                command: 'REDUCE',
-                returns: reduceResult
+                command: e.data.command,
+                returns: arrayFuncResult
             });
             break;
         } 
@@ -172,6 +166,7 @@ const _SingleWorker = Ember.Object.extend({
           case 'INVOKE':
           case 'MAP':
           case 'REDUCE':
+          case 'FILTER':
             resolve(e.data.returns);
             this._cleanupWorker();
             break;
@@ -207,6 +202,9 @@ const _SingleWorker = Ember.Object.extend({
   reduce(...args) {
     return this._run('REDUCE', ...args);
   },
+  filter(...args) {
+    return this._run('FILTER', ...args);
+  },
   cancel() {
     this._cleanupWorker();
   }
@@ -239,7 +237,7 @@ const _WorkerProperty = Ember.Object.extend({
       return Ember.RSVP.resolve(_fn.apply(_context, args));
     }
   },
-  _mapReduce(array, command, dataNormalizationCallback) {
+  _multithreadArrayFunc(array, command, dataNormalizationCallback) {
     const _fn = this.get('_fn');
     const _context = this.get('_context');
     if (SUPPORT_WEBWORKER) {
@@ -271,7 +269,7 @@ const _WorkerProperty = Ember.Object.extend({
     }
   },
   map(array) {
-    return this._mapReduce(array, 'map', function(intermediateResults) {
+    return this._multithreadArrayFunc(array, 'map', function(intermediateResults) {
       return intermediateResults.reduce(function(previousValue, currentValue) {
         return previousValue.concat(currentValue);
       });
@@ -279,8 +277,15 @@ const _WorkerProperty = Ember.Object.extend({
   },
   reduce(array) {
     const _fn = this.get('_fn').bind(this.get('_context'));
-    return this._mapReduce(array, 'reduce', function(intermediateResults) {
+    return this._multithreadArrayFunc(array, 'reduce', function(intermediateResults) {
       return intermediateResults.reduce(_fn);
+    });
+  },
+  filter(array) {
+    return this._multithreadArrayFunc(array, 'filter', function(intermediateResults) {
+      return intermediateResults.reduce(function(previousValue, currentValue) {
+        return previousValue.concat(currentValue);
+      });
     });
   },
   [INVOKE](...args) {
