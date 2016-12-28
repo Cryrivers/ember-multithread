@@ -8,7 +8,7 @@ import {
 const SUPPORT_WEBWORKER = !!(URL && Blob && Worker);
 const DEFAULT_CONCURRENCY = navigator.hardwareConcurrency || 4;
 
-function _balancedChunkify(array, numberOfSubarray) {
+function _balancedChunkify(array, numberOfSubarray = DEFAULT_CONCURRENCY) {
 
   if (numberOfSubarray < 2) {
     return [array];
@@ -130,6 +130,23 @@ const _SingleWorker = Ember.Object.extend({
                 returns: workerResult
               });
             }
+            break;
+          case 'MAP':
+            var array = e.data.params[0];
+            var mapResult = array.map(${ this._fn.toString() });
+            self.postMessage({
+                command: 'MAP',
+                returns: mapResult
+            });
+            break;
+          case 'REDUCE':
+            var array = e.data.params[0];
+            var reduceResult = array.reduce(${ this._fn.toString() });
+            self.postMessage({
+                command: 'REDUCE',
+                returns: reduceResult
+            });
+            break;
         } 
       };
     `;
@@ -142,47 +159,53 @@ const _SingleWorker = Ember.Object.extend({
     }
     this.set('isRunning', false);
   },
-  run(...args) {
+  _run(command, ...args) {
     return new Ember.RSVP.Promise((resolve, reject) => {
       this.set('isRunning', true);
-      if (SUPPORT_WEBWORKER) {
-        const blob = new Blob([this._getWorkerScript()], {type: 'text/javascript'});
-        const url = URL.createObjectURL(blob);
-        const worker = new Worker(url);
-        const context = this.get('_context');
-        this.set('_worker', worker);
-        worker.onmessage = (e) => {
-          switch (e.data.command) {
-            case 'INVOKE':
-              resolve(e.data.returns);
-              this._cleanupWorker();
-              break;
-            case 'ABORT_GET':
-              Ember.assert('You cannot use `get`, `getProperties`, `getWithDefault`, `getEach`, `incrementProperty` or `decrementProperty` in ember-multithread workers', false);
-              break;
-            case 'SET':
-              const [setKey, setValue] = e.data.params;
-              context.set(setKey, setValue);
-              break;
-            case 'SETPROPS':
-              const [setPropsKey, setPropsValue] = e.data.params;
-              context.setProperties(setPropsKey, setPropsValue);
-              break;
-          }
-        };
-        worker.onerror = (e) => {
-          reject(e);
-          this._cleanupWorker();
-        };
-        worker.postMessage({
-          command: 'INVOKE',
-          params: args
-        });
-      } else {
-        resolve(this._fn(...args));
+      const blob = new Blob([this._getWorkerScript()], {type: 'text/javascript'});
+      const url = URL.createObjectURL(blob);
+      const worker = new Worker(url);
+      const context = this.get('_context');
+      this.set('_worker', worker);
+      worker.onmessage = (e) => {
+        switch (e.data.command) {
+          case 'INVOKE':
+          case 'MAP':
+          case 'REDUCE':
+            resolve(e.data.returns);
+            this._cleanupWorker();
+            break;
+          case 'ABORT_GET':
+            Ember.assert('You cannot use `get`, `getProperties`, `getWithDefault`, `getEach`, `incrementProperty` or `decrementProperty` in ember-multithread workers', false);
+            break;
+          case 'SET':
+            const [setKey, setValue] = e.data.params;
+            context.set(setKey, setValue);
+            break;
+          case 'SETPROPS':
+            const [setPropsKey, setPropsValue] = e.data.params;
+            context.setProperties(setPropsKey, setPropsValue);
+            break;
+        }
+      };
+      worker.onerror = (e) => {
+        reject(e);
         this._cleanupWorker();
-      }
+      };
+      worker.postMessage({
+        command,
+        params: args
+      });
     });
+  },
+  run(...args) {
+    return this._run('INVOKE', ...args);
+  },
+  map(...args) {
+    return this._run('MAP', ...args);
+  },
+  reduce(...args) {
+    return this._run('REDUCE', ...args);
   },
   cancel() {
     this._cleanupWorker();
@@ -210,21 +233,55 @@ const _WorkerProperty = Ember.Object.extend({
   perform(...args) {
     const _fn = this.get('_fn');
     const _context = this.get('_context');
-    return _SingleWorker.create({ _fn, _context }).run(...args);
+    if (SUPPORT_WEBWORKER) {
+      return _SingleWorker.create({_fn, _context}).run(...args);
+    } else {
+      return Ember.RSVP.resolve(_fn.apply(_context, args));
+    }
   },
-  /**
-   *
-   * @param array
-   */
+  _mapReduce(array, command, dataNormalizationCallback) {
+    const _fn = this.get('_fn');
+    const _context = this.get('_context');
+    if (SUPPORT_WEBWORKER) {
+      return new Ember.RSVP.Promise((resolve, reject) => {
+        Ember.assert(`You must provide an array to \`${command}\` function.`, Ember.isArray(array));
+        const balancedArrays = _balancedChunkify(array);
+        const arrayOfWorkers = [];
+        const intermediatePromises = [];
+        const intermediateResults = [];
+        for (let i = 0; i < balancedArrays.length; i++) {
+          arrayOfWorkers[i] = _SingleWorker.create({_fn, _context});
+          intermediatePromises[i] = arrayOfWorkers[i][command](balancedArrays[i]).then(result => {
+            intermediateResults[i] = result;
+          });
+        }
+        Ember.RSVP.all(intermediatePromises).then(() => {
+          // Destroy all workers
+          const result = dataNormalizationCallback(intermediateResults);
+          for (let i = 0; i < arrayOfWorkers.length; i++) {
+            arrayOfWorkers[i].destroy();
+          }
+          resolve(result);
+        }).catch(err => {
+          reject(err);
+        });
+      });
+    } else {
+      return Ember.RSVP.resolve(array[command](_fn.bind(_context)));
+    }
+  },
   map(array) {
-    Ember.assert('You must provide an array to `map` function.', Ember.isArray(array));
+    return this._mapReduce(array, 'map', function(intermediateResults) {
+      return intermediateResults.reduce(function(previousValue, currentValue) {
+        return previousValue.concat(currentValue);
+      });
+    });
   },
-  /**
-   *
-   * @param array
-   */
   reduce(array) {
-    Ember.assert('You must provide an array to `reduce` function.', Ember.isArray(array));
+    const _fn = this.get('_fn').bind(this.get('_context'));
+    return this._mapReduce(array, 'reduce', function(intermediateResults) {
+      return intermediateResults.reduce(_fn);
+    });
   },
   [INVOKE](...args) {
     return this.perform(...args);

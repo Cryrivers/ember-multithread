@@ -24,6 +24,18 @@ export default Ember.Controller.extend({
   pi: 0,
   progress: 0,
   calculatePiWorker: worker(_piCalculation),
+  mapTestWorker: worker(function(item) {
+    for (let i = 0; i < 100000000000000; i++) {
+
+    }
+    return item + 1;
+  }),
+  reduceTestWorker: worker(function(previousValue, currentValue) {
+    for (let i = 0; i < 100000000000000; i++) {
+
+    }
+    return previousValue + currentValue;
+  }),
   actions: {
     calculateSingleThreaded() {
       this.set('progress', 0);
@@ -33,9 +45,21 @@ export default Ember.Controller.extend({
     },
     calculate() {
       this.set('progress', 0);
-      this.get('calculatePiWorker').perform(ITERATION_COUNT, true).then(result=> {
+      this.get('calculatePiWorker').perform(ITERATION_COUNT, true).then(result => {
         this.set('pi', 0);
         this.set('finalPi', result);
+      });
+    },
+    mapTest() {
+      const array = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      this.get('mapTestWorker').map(array).then(result => {
+        console.log(result);
+      });
+    },
+    reduceTest() {
+      const array = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+      this.get('reduceTestWorker').reduce(array).then(result => {
+        console.log(result);
       });
     }
   }
