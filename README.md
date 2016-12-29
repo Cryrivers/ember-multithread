@@ -46,8 +46,47 @@ TODO
 ### Synergy with `ember-concurrency`
 TODO
 
-### Multi-threaded `map()` and `reduce()`
-TODO
+### Multi-threaded `map()`, `reduce()` and `filter()`
+`ember-multithread` can create the number of `navigator.hardwardConcurrency` or 4 workers to do certain array operations.
+
+**NOTE: The worker function should not have side effects.**
+
+```js
+import Ember from 'ember';
+import {worker} from 'ember-multithread';
+
+export default Ember.Controller.extend({
+  mapTestWorker: worker(function(item) {
+    return item + 1;
+  }),
+  reduceTestWorker: worker(function(previousValue, currentValue) {
+    return previousValue + currentValue;
+  }),
+  filterTestWorker: worker(function(item) {
+    return item > 5;
+  }),
+  actions: {
+    mapTest() {
+      const array = Array(20000).fill(0);
+      this.get('mapTestWorker').map(array).then(result => {
+        console.log(result);
+      });
+    },
+    reduceTest() {
+      const array = Array(20000).fill(1);
+      this.get('reduceTestWorker').reduce(array).then(result => {
+        console.log(result);
+      });
+    },
+    filterTest() {
+      const array = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+      this.get('filterTestWorker').filter(array).then(result => {
+        console.log(result);
+      });
+    }
+  }
+});
+```
 
 ## Restriction
 TODO
